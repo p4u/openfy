@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "_comment": "UI adaptation rules (DESIGN 2.9). Tier 1 = app-install nags, tier 2 = first-party Premium upsell banners. Selectors are ordered: data-testid first, then semantic fallbacks. Never hashed class names (validated by ui-adapt.js and tools/test/ui-adapt.test.mjs).",
+  "rules": [
+    {
+      "id": "open-app-button",
+      "tier": 1,
+      "action": "hide",
+      "selectors": [
+        "button[data-testid=\"download-button\"]",
+        "[data-testid=\"entity-view-top-bar\"] a[href*=\"spotify.link\"]",
+        "[data-testid=\"entity-view-top-bar\"] a[href*=\"/download\"]"
+      ]
+    },
+    {
+      "id": "premium-banner",
+      "tier": 2,
+      "action": "hide",
+      "selectors": [
+        "[data-testid=\"home-banner\"]:has([data-testid=\"premium-banner\"])",
+        "[data-testid=\"premium-banner\"]",
+        "[data-testid=\"home-banner\"]:has(#spotify-premium-logo-icon)"
+      ]
+    },
+    {
+      "id": "get-app-popover",
+      "tier": 1,
+      "action": "dismiss",
+      "selectors": [
+        "[data-testid$=\"-hook\"]:has([data-encore-id=\"buttonPrimary\"]):has([data-encore-id=\"buttonTertiary\"])",
+        "[data-tippy-root]:has([data-encore-id=\"buttonPrimary\"]):has([data-encore-id=\"buttonTertiary\"])"
+      ],
+      "dismissSelectors": [
+        "[data-encore-id=\"buttonTertiary\"]"
+      ],
+      "labelSelector": "[data-encore-id=\"buttonPrimary\"]",
+      "labels": [
+      "Alkalmazás letöltése", "App downloaden", "App holen", "App letöltése", "Baixar aplicativo",
+      "Baixar app", "Conseguir app", "Dapatkan Apl", "Dapatkan Aplikasi", "Dapatkan App",
+      "Descargar aplicación", "Descargar la aplicación", "Fá forritið", "Gauti programėlę", "Get App",
+      "Hangi rakendus", "Hent appen", "Hämta appen", "Iegūt lietotni", "Instalar la aplicación",
+      "Installer l'appli", "Installer l’appli", "Kry toep", "Kunin ang App", "Lataa sovellus",
+      "Lortu aplikazioa", "Nabavite aplikaciju", "Obtenir l'application", "Obter app", "Obtén l'aplicació",
+      "Obține aplicația", "Pata Programu", "Pobierz aplikację", "Prenesi aplikacijo", "Preuzmi aplikaciju",
+      "Preuzmite aplikaciju", "Scarica l'app", "Skaff deg appen", "Stiahnuť apku", "Stáhnout aplikaci",
+      "Thola Uhlelo", "Télécharger l'application", "Tətbiqi əldə et", "Uygulamayı Edin",
+      "ΑΠΟΚΤΗΣΕ ΤΗΝ ΕΦΑΡΜΟΓΗ", "Απόκτησε την εφαρμογή", "Вземете приложението", "Преземи ја апликацијата",
+      "Скачать приложение", "Установити додаток", "להורדת האפליקציה", "להורדת היישום", "الحصول على التطبيق",
+      "ایپ حاصل کرو", "ایپ حاصل کریں", "تليشارجي التطبيق", "دریافت برنامه", "अ‍ॅप मिळवा",
+      "एप इन्स्टल गर्नुहोस्", "एप पर जाईं", "ऐप इंस्टॉल करें", "অ্যাপটি ডাউনলোড করুন", "অ্যাপটি নিন",
+      "ਐਪ ਪ੍ਰਾਪਤ ਕਰੋ", "ઍપ મેળવો", "ଆପ୍ ପାଆନ୍ତୁ", "செயலியைப் பெறுக", "యాప్‌‌ను పొందండి", "ಆ್ಯಪ್ ಪಡೆಯಿರಿ",
+      "ആപ്പ് സ്വന്തമാക്കുക", "መተግበሪያ ያግኙ", "アプリを使う", "取得 App", "取得應用程式", "获取应用", "앱 받기"
+    ]
+    },
+    {
+      "id": "get-app-dialog",
+      "tier": 1,
+      "action": "dismiss",
+      "selectors": [
+        "[role=\"dialog\"]:has(a[href*=\"spotify.link\"]):not(#onetrust-consent-sdk *)",
+        "[role=\"dialog\"]:has(a[href*=\"apps.apple.com\"]):not(#onetrust-consent-sdk *)",
+        "[role=\"dialog\"]:has(a[href*=\"play.google.com/store\"]):not(#onetrust-consent-sdk *)",
+        "[role=\"dialog\"]:has(a[href^=\"intent:\"]):not(#onetrust-consent-sdk *)"
+      ],
+      "dismissSelectors": [
+        "[data-testid*=\"close\" i]",
+        "[data-testid*=\"dismiss\" i]",
+        "[data-testid*=\"not-now\" i]",
+        "[data-encore-id=\"buttonTertiary\"]"
+      ]
+    }
+  ]
+}

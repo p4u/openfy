@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">open-spotify (research)</string>
+    <string name="channel_playback">Playback</string>
+    <string name="notification_idle_title">open-spotify</string>
+    <string name="menu_content_description">Debug menu</string>
+    <string name="menu_open_link">Open Spotify link…</string>
+    <string name="menu_diagnostics">Diagnostics</string>
+    <string name="menu_reload">Reload</string>
+    <string name="open_link_title">Open Spotify link</string>
+    <string name="open_link_hint">https://open.spotify.com/…</string>
+    <string name="open_link_rejected">Only https links on spotify.com hosts can be opened in the shell.</string>
+    <string name="action_open">Open</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="unsupported_title">This device cannot run the shell</string>
+</resources>
