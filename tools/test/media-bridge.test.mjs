@@ -2,7 +2,7 @@
 // Run: node --test tools/test/*.test.mjs
 //
 // The script is loaded, unmodified, into a `vm` context that has minimal fakes for the browser pieces it
-// touches (window === top, Navigator/navigator, HTMLMediaElement, document, OpenSpotifyBridge).
+// touches (window === top, Navigator/navigator, HTMLMediaElement, document, OpenfyBridge).
 // Test code that touches page-visible objects runs *inside* the context, so Errors and arrays have the
 // context's prototypes (as in a browser) and `instanceof` checks in the script behave as on a page.
 
@@ -75,7 +75,7 @@ function makePage({ nativeMediaSession = false } = {}) {
     URL,
     performance,
     console: { error: (...a) => consoleErrors.push(a) },
-    OpenSpotifyBridge: { postMessage: (m) => messages.push(JSON.parse(m)) },
+    OpenfyBridge: { postMessage: (m) => messages.push(JSON.parse(m)) },
   };
   const ctx = vm.createContext(sandbox);
   // Each snippet gets its own block scope so `const` names can be reused between snippets.
@@ -451,8 +451,8 @@ test('session is "missing" when only half of the API exists', () => {
 
 test('post failures are logged, not thrown', () => {
   const page = makePage();
-  page.ev(`OpenSpotifyBridge.postMessage = () => { throw new Error('closed'); }`);
-  // The script captured OpenSpotifyBridge at load, so break the stub before loading.
+  page.ev(`OpenfyBridge.postMessage = () => { throw new Error('closed'); }`);
+  // The script captured OpenfyBridge at load, so break the stub before loading.
   assert.doesNotThrow(() => page.load());
   assert.ok(page.consoleErrors.length > 0);
 });

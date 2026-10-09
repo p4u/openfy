@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.openspotify.shell"
+    namespace = "dev.openfy"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.openspotify.shell"
+        applicationId = "dev.openfy"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -16,6 +16,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
         }

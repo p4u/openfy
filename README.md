@@ -1,4 +1,4 @@
-# open-spotify (research)
+# openfy (research)
 
 A first proof of concept for a CS-degree research project: an Android app that is a **browser-like shell
 around the official Spotify Web Player** (`https://open.spotify.com`). You sign in with your own Spotify
@@ -50,7 +50,7 @@ class names) and applied by `ui-adapt.js`. The one place that needs text matchin
 in 70 of Spotify's own locales) is described in DESIGN §2.9.
 
 Toggle: debug menu -> **UI adaptation: on/off** (persisted as the `ui_adaptation` preference, takes effect by
-reloading the page). Evidence and logs: `adb logcat -s OpenSpotify | grep adapt:`; `__osAdapt.stats()` or
+reloading the page). Evidence and logs: `adb logcat -s Openfy | grep adapt:`; `__osAdapt.stats()` or
 Diagnostics show per-rule match counts, the Spotify bundle hash and rules that never matched; the Diagnostics
 dialog also lists, per bundle hash, which rules matched (rule survival across Spotify deploys).
 
@@ -74,8 +74,13 @@ androidx.media 1.7.1. No other dependencies.
 
 ```sh
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n dev.openspotify.shell/.MainActivity
+adb shell am start -n dev.openfy.debug/dev.openfy.MainActivity
 ```
+
+The debug build installs as `dev.openfy.debug` (label "openfy debug") and the release build as `dev.openfy`
+(label "openfy"), so both can coexist on one device. The `--es`/`--ez` extras below work on either; for the
+release build use `-n dev.openfy/dev.openfy.MainActivity`. The old PoC install `dev.openspotify.shell` is a
+separate app and can be uninstalled (`adb uninstall dev.openspotify.shell`).
 
 Needs a WebView with Chromium >= 120 (the app shows an error screen otherwise). On Android 13+ allow the
 notification permission. Measured on Android 15: without it the foreground service still runs and the media
@@ -88,11 +93,11 @@ Automation extras for `adb`:
 | Extra | Effect |
 |---|---|
 | `--es osp_url <https url>` | load that URL (any URL; it is still subject to the navigation policy for later navigations) |
-| `--ez osp_diag true` | after the page finishes loading, run `__osShell.diag()` and log the JSON (`adb logcat -s OpenSpotify`, lines `diag[n]:`) |
+| `--ez osp_diag true` | after the page finishes loading, run `__osShell.diag()` and log the JSON (`adb logcat -s Openfy`, lines `diag[n]:`) |
 
 With several devices attached, set `ANDROID_SERIAL` (or use `adb -s`). Helpers: `tools/emulator.sh {start|stop|shot <file>}`,
 `node tools/cdp-eval.mjs <port> '<js>' [gesture]` (evaluate in the shell's WebView after
-`adb forward tcp:<port> localabstract:webview_devtools_remote_$(adb shell pidof dev.openspotify.shell)`) and
+`adb forward tcp:<port> localabstract:webview_devtools_remote_$(adb shell pidof dev.openfy.debug)`) and
 `tools/h4-session.js` (a synthetic Media Session for the native half of H4).
 
 The small translucent button in the top-right corner opens the debug menu:
@@ -125,7 +130,7 @@ Start logging:
 
 ```sh
 adb logcat -c
-adb logcat -s OpenSpotify chromium
+adb logcat -s Openfy chromium
 ```
 
 Log prefixes you will see: `startup:`, `identity:`, `drm:`, `nav:`, `permission:`, `window:`, `bridge:`,
@@ -142,14 +147,14 @@ Log prefixes you will see: `startup:`, `identity:`, `drm:`, `nav:`, `permission:
   (`Page.navigate`, or `fetch()` from the page for fetch headers only) and diff against Chrome; the only expected
   extra is `X-Requested-With`. Known residual differences: `navigator.platform` and `navigator.languages`
   (see `docs/poc-results.md`).
-- **Bridge installed / DRM capability.** `adb shell am start -n dev.openspotify.shell/.MainActivity --ez osp_diag true`.
+- **Bridge installed / DRM capability.** `adb shell am start -n dev.openfy.debug/dev.openfy.MainActivity --ez osp_diag true`.
   In the `diag` JSON, `bridgeInstalled: true`, `session: "polyfill"` (`"wrapped-native"` on a WebView that ships the
   API, `"missing"` is a failure), `widevine: true` and, after any media element has played, `elements >= 1` are the
   pass signals (`adapt` is the UI adaptation stats, or `null` when the mode is off). The page-side checks are `'mediaSession' in navigator` and `typeof MediaMetadata`, both truthy.
   Startup also logs `drm: Widevine supported, securityLevel=...`. The first bridge message of each document is
   `{"t":"install","session":...}`.
 - **H4, native half.** `node tools/cdp-eval.mjs <port> "$(cat tools/h4-session.js)"` sets a synthetic session; then check
-  `adb shell dumpsys media_session`, `dumpsys notification --noredact`, `dumpsys activity services dev.openspotify.shell`.
+  `adb shell dumpsys media_session`, `dumpsys notification --noredact`, `dumpsys activity services dev.openfy.debug`.
   Media keys (`adb shell input keyevent KEYCODE_MEDIA_NEXT`) only reach the session while the app is actually playing
   audio, so for a synthetic run also start a test `Audio` element with `gesture`.
 - **H7, renderer kill and rotation.** Rotate (`adb shell settings put system user_rotation 1`, with
@@ -162,7 +167,7 @@ Log prefixes you will see: `startup:`, `identity:`, `drm:`, `nav:`, `permission:
 - **H0 (control).** In Chrome on the same device, play `open.spotify.com` in mobile and in desktop mode, press Home
   and turn the screen off for 30 min. Note which mode keeps playing.
 - **H2, login.** Email/password (and email-code) at `accounts.spotify.com`; force-stop the app
-  (`adb shell am force-stop dev.openspotify.shell`) and relaunch; you should still be logged in. Try Facebook and
+  (`adb shell am force-stop dev.openfy.debug`) and relaunch; you should still be logged in. Try Facebook and
   Apple (popups: look for `window: popup opened` / `popup closed`). Google should fail with
   `403 disallowed_useragent`; passkeys are expected to be unavailable.
 - **H3, Widevine playback.** Play a track and a podcast. Expect `permission: EME granted for https://open.spotify.com`

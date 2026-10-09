@@ -415,7 +415,7 @@ function installPage({ withDocumentElement = false } = {}) {
     scripts: [{ src: 'https://open.spotifycdn.com/cdn/build/mobile-web-player/mobile-web-player.cafe0001.js' }],
     querySelectorAll: (sel) => (sel === popoverSelector ? [popoverRoot] : []),
   };
-  const window = { OpenSpotifyBridge: { postMessage: (m) => posts.push(JSON.parse(m)) } };
+  const window = { OpenfyBridge: { postMessage: (m) => posts.push(JSON.parse(m)) } };
   window.top = window;
   const sandbox = {
     window, document, CSSStyleSheet, MutationObserver, Array,

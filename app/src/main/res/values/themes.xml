@@ -3,7 +3,7 @@
     <color name="surface_dark">#121212</color>
 
     <!-- DESIGN §2.3 / task item 10: dark window so there is no white flash before the page paints. -->
-    <style name="Theme.OpenSpotify" parent="Theme.AppCompat.NoActionBar">
+    <style name="Theme.Openfy" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@color/surface_dark</item>
         <item name="android:colorBackground">@color/surface_dark</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

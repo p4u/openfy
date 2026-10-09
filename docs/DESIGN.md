@@ -1,4 +1,6 @@
-# open-spotify — Design (v0.4)
+# openfy — Design (v0.4)
+
+_openfy, formerly open-spotify._
 
 Research project (CS degree): an Android app that is a **browser-like shell** around the
 official Spotify Web Player (`https://open.spotify.com`). The user signs in with their own
@@ -162,7 +164,7 @@ requests audio focus (`AudioFocusDelegate`). The bridge therefore has to *provid
    `durationchange` and `timeupdate` (throttled to 1 Hz). Capture-phase listeners on `document` stay as a backup,
    with de-duplication. Elements are held through `WeakRef`s. A `pagehide` listener reports "paused" so native
    never keeps a stale playing state. The hooks always call the original and are JS-visible in the same way.
-4. Post JSON to native through the `OpenSpotifyBridge` object injected by
+4. Post JSON to native through the `OpenfyBridge` object injected by
    `WebViewCompat.addWebMessageListener(..., {"https://open.spotify.com"})`. Native drops messages with
    `!isMainFrame`. The first message of every document is `install`
    (`{session: "polyfill"|"wrapped-native"|"missing", wrapped, hooks, elements}`); native treats it as "new
@@ -261,7 +263,7 @@ words joined by dashes, or any `[class...]` attribute selector, and drops it alo
   testid or aria-label. The dismiss button itself is matched structurally, not by text. Not retrievable: `ar`,
   `ar-EG`, `th`, `vi` (no locale file served); in those languages the popover is reported as `dismiss-failed`
   (`reason: "label-not-listed"`) and left alone.
-- Telemetry through the existing `OpenSpotifyBridge`: `{t:"adapt", rule, action:"hidden"|"dismissed"|"dismiss-failed", bundle}`
+- Telemetry through the existing `OpenfyBridge`: `{t:"adapt", rule, action:"hidden"|"dismissed"|"dismiss-failed", bundle}`
   plus `sel` (index of the selector that matched) and `reason` for failures, and one `installed` message per document.
   `bundle` is the hashed `mobile-web-player.*.js` / `web-player.*.js` file name, so Spotify deploys can be told apart.
   `hidden` means a hide selector matched an element and is sent once per rule per page load (the check runs on the

@@ -1,4 +1,5 @@
 # PoC results (emulator run, DESIGN v0.3; H8 added with v0.4)
+> Note: this document was written when the app was still called open-spotify (package `dev.openspotify.shell`, logcat tag `OpenSpotify`, JS bridge `OpenSpotifyBridge`). Recorded logs and commands below keep those old names as historical evidence; they are now `dev.openfy` / `dev.openfy.debug`, tag `Openfy`, `OpenfyBridge`.
 
 Everything below was run against the debug build in this repository. Nothing was simulated except where a
 section says "synthetic". Commands are shown with the key output lines. Screenshots are in

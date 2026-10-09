@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "open-spotify"
+rootProject.name = "openfy"
 include(":app")

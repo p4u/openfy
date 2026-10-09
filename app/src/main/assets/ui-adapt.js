@@ -21,7 +21,7 @@
  * Rules never match hashed class names (parseRules rejects them). Third-party consent dialogs (OneTrust)
  * are never touched.
  *
- * Telemetry through OpenSpotifyBridge:
+ * Telemetry through OpenfyBridge:
  *   {t:"adapt", rule, action:"hidden"|"dismissed"|"dismiss-failed", bundle, sel, count?, reason?}
  *   {t:"adapt", rule:null, action:"installed", bundle, rules:[ids], rejected:[{id,error}]}
  * `bundle` is the hashed web-player bundle file name, so Spotify deploys can be told apart.
@@ -332,7 +332,7 @@
   if (window !== window.top) return;               // main frame only
   if (window.__osAdapt) return;                    // idempotent
 
-  var bridge = window.OpenSpotifyBridge;
+  var bridge = window.OpenfyBridge;
   function post(obj) {
     try {
       if (bridge) bridge.postMessage(JSON.stringify(obj));

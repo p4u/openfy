@@ -14,7 +14,7 @@
  * It does not touch the DOM, CSS or content of the page. It is JS-detectable (see the detectability note
  * in docs/DESIGN.md §2.6): polyfilled functions have source text, not "[native code]".
  *
- * Messages (JSON string via OpenSpotifyBridge.postMessage):
+ * Messages (JSON string via OpenfyBridge.postMessage):
  *   {t:"install", session:"polyfill"|"wrapped-native"|"missing", wrapped:[...], hooks:[...], elements}
  *   {t:"metadata", title, artist, album, artwork:[{src,sizes,type}]}   (title/artist empty = cleared)
  *   {t:"state", declared:"none"|"paused"|"playing"}
@@ -36,7 +36,7 @@
   // Transport to the native shell
   // ---------------------------------------------------------------------------------------------
 
-  var bridge = window.OpenSpotifyBridge;
+  var bridge = window.OpenfyBridge;
 
   function post(obj) {
     try {

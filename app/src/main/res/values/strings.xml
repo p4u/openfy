@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">open-spotify (research)</string>
-    <string name="channel_playback">Playback</string>
-    <string name="notification_idle_title">open-spotify</string>
+    <string name="app_name">openfy</string>
+    <string name="channel_playback">openfy playback</string>
+    <string name="notification_idle_title">openfy</string>
     <string name="menu_content_description">Debug menu</string>
     <string name="menu_open_link">Open Spotify link…</string>
     <string name="menu_diagnostics">Diagnostics</string>
