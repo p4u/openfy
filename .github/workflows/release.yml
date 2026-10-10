@@ -1,0 +1,180 @@
+name: release
+
+# Builds, signs and verifies openfy-<version>.apk and attaches it to the published GitHub Release.
+# Spec: docs/UPDATER.md section 1. Operator guide: docs/RELEASING.md.
+#
+# release/published  -> real release: the APK and its .sha256 are uploaded to that release.
+# workflow_dispatch  -> dry run: same steps, but the files are only kept as a workflow artifact.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. 1.2.3 or 1.2.3-rc.1 (dry run: nothing is uploaded to a release)"
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true # release builds never write the cache
+
+      - name: Resolve version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = release ]; then
+            tag=$RELEASE_TAG
+          else
+            tag="v${INPUT_VERSION#v}"
+          fi
+          # Single source of truth for the tag grammar and the versionCode formula.
+          read -r version code < <(tools/version-code.sh "$tag")
+          if [ "$EVENT_NAME" = release ]; then
+            case "$version" in
+              *-rc.*) expected=true ;;
+              *) expected=false ;;
+            esac
+            if [ "$RELEASE_PRERELEASE" != "$expected" ]; then
+              echo "::error::Tag $tag requires the GitHub release to have prerelease=$expected, but it is $RELEASE_PRERELEASE. Mark the release as a pre-release if and only if the tag has an -rc.N suffix."
+              exit 1
+            fi
+          fi
+          {
+            echo "TAG=$tag"
+            echo "VERSION=$version"
+            echo "VERSION_CODE=$code"
+          } >> "$GITHUB_ENV"
+          echo "Building $tag: versionName=$version versionCode=$code"
+
+      - name: Tests and lint
+        run: |
+          set -euo pipefail
+          tools/version-code.sh --selftest
+          node --version
+          node --test tools/test/*.test.mjs
+          ./gradlew --no-daemon :app:checkVersionVectors testReleaseUnitTest lintRelease "-PversionName=$VERSION"
+
+      - name: Decode keystore
+        env:
+          OPENFY_KEYSTORE_B64: ${{ secrets.OPENFY_KEYSTORE_B64 }}
+        run: |
+          set +x
+          set -euo pipefail
+          if [ -z "$OPENFY_KEYSTORE_B64" ]; then
+            echo "::error::Secret OPENFY_KEYSTORE_B64 is empty or missing in the 'release' environment. See docs/RELEASING.md."
+            exit 1
+          fi
+          umask 077
+          echo "$OPENFY_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "OPENFY_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        env:
+          OPENFY_KEYSTORE_PASSWORD: ${{ secrets.OPENFY_KEYSTORE_PASSWORD }}
+          OPENFY_KEY_ALIAS: ${{ secrets.OPENFY_KEY_ALIAS }}
+          OPENFY_KEY_PASSWORD: ${{ secrets.OPENFY_KEY_PASSWORD }}
+        run: |
+          set +x
+          set -euo pipefail
+          ./gradlew --no-daemon assembleRelease "-PversionName=$VERSION" -PrequireSigning=true
+
+      - name: Rename APK
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/openfy-$VERSION.apk"
+
+      - name: Verify signature
+        env:
+          EXPECTED_CERT_SHA256: ${{ vars.OPENFY_RELEASE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          build_tools=$ANDROID_HOME/build-tools/35.0.0
+          [ -x "$build_tools/apksigner" ] || build_tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          echo "BUILD_TOOLS=$build_tools" >> "$GITHUB_ENV"
+          rc=0
+          out=$("$build_tools/apksigner" verify --verbose --print-certs "dist/openfy-$VERSION.apk" 2>&1) || rc=$?
+          printf '%s\n' "$out"
+          [ "$rc" -eq 0 ] || { echo "::error::apksigner verify failed"; exit 1; }
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' <<<"$out" || { echo "::error::APK is not v2-signed"; exit 1; }
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' <<<"$out" || { echo "::error::APK is not v3-signed"; exit 1; }
+          grep -q '^Number of signers: 1$' <<<"$out" || { echo "::error::Expected exactly one signer"; exit 1; }
+          actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<<"$out" | tr -d ':' | tr 'A-F' 'a-f')
+          if [ -z "${EXPECTED_CERT_SHA256:-}" ]; then
+            echo "::error::Repository variable OPENFY_RELEASE_CERT_SHA256 is not set. See docs/RELEASING.md."
+            exit 1
+          fi
+          expected=$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ': \t\r\n' | tr 'A-F' 'a-f')
+          # Human-readable fingerprint for the run log (apksigner prints lower-case hex without colons).
+          pretty=$(printf '%s' "$actual" | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//')
+          echo "Signing certificate SHA-256: $pretty"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::Signing certificate mismatch. Built with $pretty, expected OPENFY_RELEASE_CERT_SHA256=$EXPECTED_CERT_SHA256. The wrong keystore is stored in the release environment secrets."
+            exit 1
+          fi
+
+      - name: Verify package and version
+        run: |
+          set -euo pipefail
+          dump=$("$BUILD_TOOLS/aapt2" dump badging "dist/openfy-$VERSION.apk")
+          badging=$(grep -m1 '^package:' <<<"$dump")
+          echo "$badging"
+          grep -q "name='dev.openfy'" <<<"$badging" || { echo "::error::Unexpected package name"; exit 1; }
+          grep -q " versionName='$VERSION' " <<<"$badging" || { echo "::error::versionName is not $VERSION"; exit 1; }
+          grep -q " versionCode='$VERSION_CODE' " <<<"$badging" || { echo "::error::versionCode is not $VERSION_CODE"; exit 1; }
+
+      - name: Checksum
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum "openfy-$VERSION.apk" > "openfy-$VERSION.apk.sha256"
+          sha256sum -c "openfy-$VERSION.apk.sha256"
+
+      - name: Upload to the GitHub release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" "dist/openfy-$VERSION.apk" "dist/openfy-$VERSION.apk.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Upload dry-run artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: openfy-${{ env.VERSION }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
