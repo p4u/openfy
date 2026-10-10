@@ -145,7 +145,7 @@ spec vectors.
 
   ```sh
   keytool -genkeypair -v -keystore openfy-release.jks -storetype PKCS12 -alias openfy \
-    -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=openfy, O=openfy"
+    -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=openfy, O=openfy research"
   ```
 
 ## Bumping pinned actions
