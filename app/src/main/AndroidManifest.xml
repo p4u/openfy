@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Self-updater (docs/UPDATER.md §3.1). The user still has to allow "install unknown apps" for this app. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".OpenfyApp"
@@ -36,6 +38,11 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>
+
+        <!-- PackageInstaller status for the self-updater; the PendingIntent targets this component explicitly. -->
+        <receiver
+            android:name=".update.InstallStatusReceiver"
+            android:exported="false" />
 
         <receiver
             android:name="androidx.media.session.MediaButtonReceiver"

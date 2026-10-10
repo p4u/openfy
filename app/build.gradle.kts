@@ -95,6 +95,12 @@ android {
         targetSdk = 35
         versionCode = appVersionCode
         versionName = appVersionName
+
+        // docs/UPDATER.md §2.1: the repo the updater reads releases from (override: -PupdaterRepo=owner/repo).
+        val updaterRepo = (project.findProperty("updaterRepo") as String?) ?: "p4u/openfy"
+        buildConfigField("String", "UPDATER_REPO", "\"$updaterRepo\"")
+        // Test-only API/download origin (http://127.0.0.1:<port>). Empty here, so release builds never carry one.
+        buildConfigField("String", "UPDATER_TEST_BASE", "\"\"")
     }
 
     signingConfigs {
@@ -116,6 +122,9 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+            // Debug only: -PupdaterTestBase=http://127.0.0.1:8765 points the updater at a local server (UPDATER.md §5).
+            val testBase = (project.findProperty("updaterTestBase") as String?) ?: ""
+            buildConfigField("String", "UPDATER_TEST_BASE", "\"$testBase\"")
         }
         release {
             isMinifyEnabled = false

@@ -29,6 +29,7 @@ import androidx.appcompat.widget.PopupMenu
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import dev.openfy.update.UpdateUi
 import org.json.JSONObject
 
 /** Just a window for the shared WebView (DESIGN §2.1) plus a tiny debug menu. */
@@ -36,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webContainer: FrameLayout
     private var gateOk = false
     private var showDiagDialog = false
+    private var updateUi: UpdateUi? = null
     private val handler = Handler(Looper.getMainLooper())
 
     private val notificationPermission =
@@ -63,6 +65,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         gateOk = true
+        updateUi = UpdateUi(this).also { it.bind() }
 
         val root = FrameLayout(this).apply { setBackgroundColor(WebViewConfig.BACKGROUND) }
         webContainer = FrameLayout(this)
@@ -109,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         WebViewHolder.onActivityStart()
         MediaBridge.diagListener = ::onDiag
         if (MediaBridge.state.hasTrack) WebViewHolder.startPlaybackServiceIfPossible()
+        updateUi?.onStart()
     }
 
     override fun onStop() {
@@ -121,6 +125,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        updateUi?.onDestroy()
         if (gateOk) WebViewHolder.detach(this)
         super.onDestroy()
     }
@@ -161,6 +166,7 @@ class MainActivity : AppCompatActivity() {
             menu.add(0, MENU_RELOAD, 3, R.string.menu_reload)
             val adaptOn = UiAdaptation.isEnabled(this@MainActivity)
             menu.add(0, MENU_ADAPT, 4, "UI adaptation: ${if (adaptOn) "on" else "off"} (switch ${if (adaptOn) "off" else "on"})")
+            menu.add(0, MENU_UPDATE, 5, R.string.menu_check_updates)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     MENU_IDENTITY -> WebViewHolder.setArm(other)
@@ -170,6 +176,7 @@ class MainActivity : AppCompatActivity() {
                         MediaBridge.requestDiag()
                     }
                     MENU_RELOAD -> WebViewHolder.reload()
+                    MENU_UPDATE -> updateUi?.check(manual = true)
                     MENU_ADAPT -> UiAdaptation.setEnabled(!UiAdaptation.isEnabled(this@MainActivity))
                 }
                 true
@@ -246,5 +253,6 @@ class MainActivity : AppCompatActivity() {
         const val MENU_DIAG = 3
         const val MENU_RELOAD = 4
         const val MENU_ADAPT = 5
+        const val MENU_UPDATE = 6
     }
 }

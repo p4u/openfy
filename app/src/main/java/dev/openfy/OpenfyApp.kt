@@ -3,11 +3,13 @@ package dev.openfy
 import android.app.Application
 import android.util.Log
 import androidx.webkit.WebViewCompat
+import dev.openfy.update.UpdateManager
 
 class OpenfyApp : Application() {
     override fun onCreate() {
         super.onCreate()
         WebViewHolder.init(this)
+        UpdateManager.cleanup(this)
         val pkg = WebViewCompat.getCurrentWebViewPackage(this)
         Log.i(TAG, "startup: webview=${pkg?.packageName} ${pkg?.versionName} sdk=${android.os.Build.VERSION.SDK_INT}")
         DrmDiagnostics.log()
