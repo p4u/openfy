@@ -29,6 +29,10 @@ object UpdateManager {
     val state: StateFlow<UpdateState> = mutableState
 
     private var currentFile: File? = null
+
+    /** Id of the PackageInstaller session this process committed, or -1. Receiver statuses for others are ignored. */
+    @Volatile
+    private var activeSession = -1
     private var updatedToVersion: String? = null
 
     private val http by lazy { UpdateHttp(UpdateConfig.hosts, UpdateConfig.userAgent) }
@@ -39,13 +43,17 @@ object UpdateManager {
         else -> false
     }
 
+    /** States a manual check may abandon: the session is committed (or about to be) and waiting on the system. */
+    private fun isWaitingOnSystem(): Boolean =
+        mutableState.value.let { it == UpdateState.Installing || it is UpdateState.NeedsUserAction }
+
     // region application start
 
     /** `Application.onCreate`: forget leftovers of a previous process and note whether we were just updated. */
     fun cleanup(context: Context) {
         try {
             File(context.cacheDir, DIR).deleteRecursively()
-            Installer.abandonStaleSessions(context)
+            Installer.abandonStaleSessions(context, keepCommitted = true)
             val prefs = UpdatePrefs(context)
             val code = BuildConfig.VERSION_CODE.toLong()
             val previous = prefs.lastInstalledCode
@@ -69,21 +77,35 @@ object UpdateManager {
         UpdateDecision.auto(UpdateConfig.isDebug, UpdatePrefs(context).lastCheckMs, System.currentTimeMillis()) ==
             UpdateDecision.Action.Check
 
-    /** [manual] checks always report a result; automatic ones only surface an offer (failures are logged). */
-    suspend fun check(context: Context, manual: Boolean) {
+    /**
+     * [manual] checks always report a result; automatic ones only surface an offer (failures are logged).
+     * Returns false if the check was refused because an update is already in progress. A manual check also
+     * breaks out of an install that is waiting on the system (confirm sheet dismissed, status lost): it abandons the
+     * session and starts over, so the updater can never stay wedged.
+     */
+    suspend fun check(context: Context, manual: Boolean): Boolean {
+        if (manual && isWaitingOnSystem()) {
+            Log.i(TAG, "update: manual check abandons the pending install (${mutableState.value::class.simpleName})")
+            activeSession = -1 // statuses of the abandoned session must not touch the new state
+            withContext(Dispatchers.IO) { Installer.abandonStaleSessions(context, keepCommitted = false) }
+            if (isWaitingOnSystem()) {
+                discardFile()
+                mutableState.value = UpdateState.Idle
+            }
+        }
         if (isBusy()) {
             Log.i(TAG, "update: check ignored, busy (${mutableState.value::class.simpleName})")
-            return
+            return false
         }
         val prefs = UpdatePrefs(context)
         mutableState.value = UpdateState.Checking
         Log.i(TAG, "update: check start manual=$manual")
         try {
             val (status, body) = withContext(Dispatchers.IO) {
-                http.getText(UpdateConfig.latestUrl, SizeCap.MAX_JSON_BYTES, "application/vnd.github+json")
+                http.getText(UpdateConfig.latestUrl, SizeCap.MAX_JSON_BYTES, "application/vnd.github+json", "release information")
             }
             prefs.lastCheckMs = System.currentTimeMillis()
-            when (val parsed = ReleaseParser.parse(status, body)) {
+            when (val parsed = ReleaseParser.parse(status, body, BuildConfig.UPDATER_REPO, UpdateConfig.downloadBase)) {
                 ParseResult.NoRelease -> quiet(manual, "No release has been published yet.")
                 is ParseResult.Ignored -> quiet(manual, "No update available (${parsed.reason}).")
                 is ParseResult.Invalid -> fail(manual, "Update check failed: ${parsed.reason}.")
@@ -97,6 +119,7 @@ object UpdateManager {
             Log.w(TAG, "update: check failed", e)
             fail(manual, "Update check failed: ${e.message ?: e.javaClass.simpleName}")
         }
+        return true
     }
 
     private fun afterParse(release: Release, prefs: UpdatePrefs, manual: Boolean) {
@@ -173,15 +196,20 @@ object UpdateManager {
             if (refusal != null) throw UpdateException(refusal)
 
             prepareProcessForRestart(context)
-            mutableState.value = UpdateState.Installing
-            withContext(Dispatchers.IO) { Installer.commit(context, file) }
+            // The state stays Verifying until the commit returns: a status broadcast may arrive meanwhile and must win.
+            withContext(Dispatchers.IO) {
+                Installer.commit(context, file, expected) { activeSession = it }
+            }
+            mutableState.compareAndSet(UpdateState.Verifying, UpdateState.Installing)
         } catch (e: CancellationException) {
             Log.i(TAG, "update: cancelled")
+            activeSession = -1
             withContext(NonCancellable) { discardFile() }
             mutableState.value = UpdateState.Idle
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "update: install failed", e)
+            activeSession = -1
             discardFile()
             mutableState.value = UpdateState.Failed(e.message ?: e.javaClass.simpleName)
         }
@@ -190,7 +218,7 @@ object UpdateManager {
     private suspend fun expectedSha256(release: Release): String = when (val c = release.checksum) {
         is Checksum.Inline -> c.hex
         is Checksum.Sidecar -> withContext(Dispatchers.IO) {
-            val (status, text) = http.getText(c.url, SizeCap.MAX_CHECKSUM_BYTES, "text/plain")
+            val (status, text) = http.getText(c.url, SizeCap.MAX_CHECKSUM_BYTES, "text/plain", "checksum file")
             if (status != 200) throw UpdateException("Could not fetch the checksum file (HTTP $status).")
             Sha256.fromChecksumFile(text) ?: throw UpdateException("The checksum file does not contain a SHA-256.")
         }
@@ -218,7 +246,6 @@ object UpdateManager {
             signers = signers,
             archivePath = file.path,
             expectedVersionName = release.versionName,
-            isDebug = UpdateConfig.isDebug,
         )
     }
 
@@ -243,20 +270,32 @@ object UpdateManager {
 
     // region PackageInstaller status (from InstallStatusReceiver, main thread)
 
+    /** True if [sessionId] is the session this process committed; the receiver ignores all other statuses. */
+    fun isActiveSession(sessionId: Int): Boolean = sessionId != -1 && sessionId == activeSession
+
+    /**
+     * The state stays [UpdateState.NeedsUserAction] until a terminal status arrives, so the Activity can launch the
+     * confirm screen again at its next start (docs/UPDATER.md §3.7) and a manual check can break out of it.
+     */
     fun onUserActionRequired(confirm: Intent) {
         mutableState.value = UpdateState.NeedsUserAction(confirm)
     }
 
-    /** The Activity launched the confirm screen. */
-    fun userActionLaunched() {
-        if (mutableState.value is UpdateState.NeedsUserAction) mutableState.value = UpdateState.Installing
-    }
-
     fun onInstallSucceeded() {
         Log.i(TAG, "update: install succeeded; the process is about to be replaced")
+        activeSession = -1
+    }
+
+    /** The Activity could not open the system confirm screen: abandon the session and tell the user. */
+    fun confirmScreenUnavailable(context: Context, e: Exception) {
+        Log.w(TAG, "update: cannot open the install confirmation", e)
+        val id = activeSession
+        if (id != -1) Installer.abandon(context, id)
+        onInstallFailed(PackageInstaller.STATUS_FAILURE, "the system install screen could not be opened")
     }
 
     fun onInstallFailed(status: Int, message: String?) {
+        activeSession = -1
         discardFile()
         if (status == PackageInstaller.STATUS_FAILURE_ABORTED) {
             Log.i(TAG, "update: install cancelled by the user")

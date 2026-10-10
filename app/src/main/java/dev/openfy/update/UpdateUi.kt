@@ -1,5 +1,6 @@
 package dev.openfy.update
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -32,7 +33,10 @@ class UpdateUi(private val activity: AppCompatActivity) {
 
     private val unknownSources =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            val release = pendingRelease ?: return@registerForActivityResult
+            // The Activity may have been recreated while Settings was open: the field is gone, the state is not.
+            val release = pendingRelease
+                ?: (UpdateManager.state.value as? UpdateState.AwaitingPermission)?.release
+                ?: return@registerForActivityResult
             pendingRelease = null
             if (activity.packageManager.canRequestPackageInstalls()) {
                 startInstall(release)
@@ -53,7 +57,11 @@ class UpdateUi(private val activity: AppCompatActivity) {
 
     /** Debug menu entry and the automatic check. */
     fun check(manual: Boolean) {
-        activity.lifecycleScope.launch { UpdateManager.check(activity, manual) }
+        activity.lifecycleScope.launch {
+            if (!UpdateManager.check(activity, manual) && manual) {
+                Toast.makeText(activity, "An update is already in progress.", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     fun onStart() {
@@ -78,11 +86,31 @@ class UpdateUi(private val activity: AppCompatActivity) {
             is UpdateState.NeedsUserAction -> {
                 closeDialog()
                 Log.i(TAG, "update: launching the system install confirmation")
-                activity.startActivity(state.confirm)
-                UpdateManager.userActionLaunched()
+                try {
+                    activity.startActivity(state.confirm)
+                } catch (e: ActivityNotFoundException) {
+                    UpdateManager.confirmScreenUnavailable(activity, e)
+                } catch (e: SecurityException) {
+                    UpdateManager.confirmScreenUnavailable(activity, e)
+                }
             }
             UpdateState.Idle, UpdateState.Verifying, UpdateState.Installing -> closeDialog()
-            is UpdateState.AwaitingPermission, UpdateState.Checking -> Unit
+            is UpdateState.AwaitingPermission -> awaitingPermission(state.release)
+            UpdateState.Checking -> Unit
+        }
+    }
+
+    /**
+     * The state can outlive its dialog (Activity recreated, dialog dismissed with the window), so it is rendered
+     * rather than assumed: granted means go on, otherwise explain again. While Settings is open [pendingRelease]
+     * is set and the activity-result callback decides.
+     */
+    private fun awaitingPermission(release: Release) {
+        if (pendingRelease != null) return
+        if (activity.packageManager.canRequestPackageInstalls()) {
+            startInstall(release)
+        } else {
+            showPermissionDialog(release)
         }
     }
 
@@ -110,7 +138,10 @@ class UpdateUi(private val activity: AppCompatActivity) {
             startInstall(release)
             return
         }
-        UpdateManager.awaitPermission(release)
+        UpdateManager.awaitPermission(release) // render() shows the explanation
+    }
+
+    private fun showPermissionDialog(release: Release) {
         show(
             AlertDialog.Builder(activity)
                 .setTitle(R.string.update_permission_title)

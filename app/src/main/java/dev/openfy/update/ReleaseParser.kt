@@ -18,12 +18,19 @@ sealed interface ParseResult {
     data class Invalid(val reason: String) : ParseResult
 }
 
-/** Pure: GitHub `releases/latest` JSON to [Release]. */
+/**
+ * Pure: GitHub `releases/latest` JSON to [Release].
+ *
+ * Asset URLs are pinned: the APK and its sidecar must be exactly
+ * `<downloadBase>/<repo>/releases/download/<tag>/<asset name>` (owner/repo compared case-insensitively), where
+ * [downloadBase] is `https://github.com` (a debug build with a test origin passes that origin instead).
+ * Anything else is [ParseResult.Invalid].
+ */
 object ReleaseParser {
     private val APK_NAME = Regex("""^openfy-(.+)\.apk$""")
     const val MAX_NOTES_CHARS = 4000
 
-    fun parse(status: Int, body: String): ParseResult {
+    fun parse(status: Int, body: String, repo: String, downloadBase: String): ParseResult {
         if (status == 404) return ParseResult.NoRelease
         if (status != 200) return ParseResult.Invalid("GitHub answered HTTP $status")
         val json = try {
@@ -32,13 +39,13 @@ object ReleaseParser {
             return ParseResult.Invalid("unreadable release JSON")
         }
         return try {
-            fromJson(json)
+            fromJson(json, repo, downloadBase)
         } catch (e: JSONException) {
             ParseResult.Invalid("malformed release JSON")
         }
     }
 
-    private fun fromJson(json: JSONObject): ParseResult {
+    private fun fromJson(json: JSONObject, repo: String, downloadBase: String): ParseResult {
         if (json.optBoolean("draft", false)) return ParseResult.Ignored("release is a draft")
         if (json.optBoolean("prerelease", false)) return ParseResult.Ignored("release is a pre-release")
         val tag = json.optString("tag_name", "")
@@ -57,6 +64,10 @@ object ReleaseParser {
 
         val url = apk.optString("browser_download_url", "")
         if (url.isEmpty()) return ParseResult.Invalid("APK asset has no download URL")
+        val pinned = "$downloadBase/$repo/releases/download/"
+        fun pinnedTo(assetUrl: String, assetName: String): Boolean =
+            assetUrl.startsWith(pinned, ignoreCase = true) && assetUrl.substring(pinned.length) == "$tag/$assetName"
+        if (!pinnedTo(url, apkName)) return ParseResult.Invalid("APK asset is hosted outside the release")
         val size = apk.optLong("size", -1)
         SizeCap.refusal(size)?.let { return ParseResult.Invalid(it) }
 
@@ -64,6 +75,9 @@ object ReleaseParser {
         val sidecarName = "$apkName.sha256"
         val sidecar = all.firstOrNull { it.optString("name") == sidecarName }
             ?.optString("browser_download_url", "")?.takeIf { it.isNotEmpty() }
+        if (sidecar != null && !pinnedTo(sidecar, sidecarName)) {
+            return ParseResult.Invalid("checksum asset is hosted outside the release")
+        }
         val checksum = when {
             inline != null -> Checksum.Inline(inline)
             sidecar != null -> Checksum.Sidecar(sidecar)

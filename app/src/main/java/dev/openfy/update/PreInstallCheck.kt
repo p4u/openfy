@@ -7,8 +7,7 @@ data class PackageFacts(val packageName: String, val versionCode: Long, val vers
 object PreInstallCheck {
     /**
      * Returns null if [archivePath] may be installed over [installed], else the reason to show the user.
-     * [archive] is the APK's own manifest data (null if unparseable). Debug builds carry AGP's `-debug` suffix in
-     * their versionName; it is ignored there only.
+     * [archive] is the APK's own manifest data (null if unparseable).
      */
     fun refusal(
         installed: PackageFacts,
@@ -16,7 +15,6 @@ object PreInstallCheck {
         signers: SignerSource,
         archivePath: String,
         expectedVersionName: String,
-        isDebug: Boolean,
     ): String? {
         if (archive == null) return "The downloaded file is not a valid APK."
         if (archive.packageName != installed.packageName) {
@@ -26,9 +24,8 @@ object PreInstallCheck {
             return "The downloaded APK (versionCode ${archive.versionCode}) is not newer than the installed one " +
                 "(${installed.versionCode}). Downgrades are refused."
         }
-        val name = archive.versionName?.let { if (isDebug) Version.stripDebugSuffix(it) else it }
-        if (name != expectedVersionName) {
-            return "The downloaded APK says version $name, the release says $expectedVersionName."
+        if (archive.versionName != expectedVersionName) {
+            return "The downloaded APK says version ${archive.versionName}, the release says $expectedVersionName."
         }
         return when (val v = SignerCheck.verdict(signers.installed(), signers.archive(archivePath))) {
             SignerCheck.Verdict.Match -> null

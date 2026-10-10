@@ -39,7 +39,8 @@ on:
 
 ### 1.2 Versioning (the contract shared with the updater)
 
-Tag grammar (regex, anchored): `^v(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$`. Examples: `v0.2.0`, `v0.2.0-rc.1`.
+Tag grammar (regex, anchored): `^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-rc\.([1-9][0-9]?))?$` (no leading
+zeros: `v01.2.3` would collide with `v1.2.3`). Examples: `v0.2.0`, `v0.2.0-rc.1`.
 
 - `versionName` = tag without the leading `v` (`0.2.0`, `0.2.0-rc.1`).
 - `versionCode` = `X*1_000_000 + Y*10_000 + Z*100 + (final ? 99 : N)`, with `1 ≤ N ≤ 98`, `Y,Z ≤ 99`, `X ≤ 2000`.
@@ -75,7 +76,7 @@ Where the computation lives:
 
 ### 1.3 Runner
 
-`ubuntu-latest`. The runner image ships the Android SDK with `ANDROID_HOME` set and licenses accepted; AGP 8.7
+`ubuntu-24.04` (pinned, not `ubuntu-latest`, which moves to Ubuntu 26 on 2026-10-19; the pipeline was verified on 24.04). The runner image ships the Android SDK with `ANDROID_HOME` set and licenses accepted; AGP 8.7
 auto-downloads platform 35 / build-tools 35.0.0 if missing, so no `setup-android` action is needed. Steps, with
 actions **pinned to commit SHAs** (resolved 2026-10-10; re-resolve when bumping):
 
@@ -216,7 +217,7 @@ research benefit. The JS bridge itself is not the obstacle: `WebMessageListener`
 
 ```
 -keepattributes SourceFile,LineNumberTable
--keep class dev.openfy.updater.InstallStatusReceiver { *; }   # manifest-declared, already kept by AGP defaults
+-keep class dev.openfy.update.InstallStatusReceiver { *; }   # manifest-declared, already kept by AGP defaults
 -keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }  # only if a JS interface is ever added
 ```
 plus retaining `mapping.txt` as a release asset. Not now.
@@ -239,7 +240,11 @@ whose `name` matches `^openfy-(.+)\.apk$` (exactly one; zero or more than one �
 treated as no update). From that asset: `browser_download_url`, `size`, `digest` (string `"sha256:<hex>"`, present
 on assets uploaded since mid-2025 *(verified)*; may be `null` on older releases), and the sibling asset named
 `<apk name>.sha256` if present. The version inside the asset name must equal `tag_name` minus `v`; if not, ignore
-the release (log `updater: asset/tag mismatch`).
+the release (log `update: asset/tag mismatch`).
+
+`browser_download_url` of the APK and of the sidecar must be exactly
+`https://github.com/<UPDATER_REPO>/releases/download/<tag>/<asset name>` (owner/repo case-insensitive); anything else is
+`Invalid`. Debug builds with a test origin use `<test origin>/<repo>/releases/download/<tag>/<asset name>`.
 
 `prerelease == true` or `draft == true` can never come back from `/latest`, but check anyway and ignore.
 
@@ -248,7 +253,7 @@ the release (log `updater: asset/tag mismatch`).
 - HTTPS only. Any `http://` URL (initial or redirect) → abort.
 - Redirects are followed **manually** (`instanceFollowRedirects = false`, loop ≤ 5, only 301/302/303/307/308,
   `Location` resolved against the current URL). Every hop must pass the host allow-list below; a `Location` outside
-  it → abort with `updater: redirect to disallowed host <host>` (host logged, never the full signed URL, which
+  it → abort with `update: redirect to disallowed host <host>` (host logged, never the full signed URL, which
   carries a token).
 - Allow-list (exact host match, case-insensitive, no port or port 443 only):
   `api.github.com`, `github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`.
@@ -306,7 +311,7 @@ withhold updates, which is harmless). Both are documented limitations.
 ```xml
 <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
-<receiver android:name=".updater.InstallStatusReceiver" android:exported="false" />
+<receiver android:name=".update.InstallStatusReceiver" android:exported="false" />
 ```
 
 `REQUEST_INSTALL_PACKAGES` is a normal (install-time) permission, but on API 26+ the user must additionally allow
@@ -400,6 +405,7 @@ pi.openSession(sessionId).use { s ->
   itself*. The first update after a sideload (`adb install`, Files app) therefore always shows the system confirm
   sheet; from the second update on it is silent. Never assume it: always handle `STATUS_PENDING_USER_ACTION`.
 - Session timeouts / orphan sessions: on app start, `pi.mySessions.forEach { pi.abandonSession(it.sessionId) }`
+  (on API 29+ skipping sessions with `isCommitted`: the system confirm sheet may still be up; a manual check abandons all)
   before any new check (cleanup, cheap).
 
 ### 3.7 Status receiver
@@ -425,6 +431,9 @@ Failed(message)`). `MainActivity` collects it with `repeatOnLifecycle(STARTED)`.
 `startActivity(confirm)` **from the Activity** (the receiver must not start activities: background-activity-start
 rules on 10+ would drop it when the app is not in the foreground). If the Activity is not started when the status
 arrives, the state is kept and the confirm intent launched at the next `onStart`; the pending session survives.
+The state stays `NeedsUserAction` until a terminal status arrives; a manual check abandons the session and starts over.
+The receiver ignores any status whose `EXTRA_SESSION_ID` is not the session this process committed. The session
+receives bytes that were re-hashed while being copied (must equal the verified SHA-256) before `commit`.
 On `Failed` show the message (`EXTRA_STATUS_MESSAGE` is human-readable, e.g. `INSTALL_FAILED_UPDATE_INCOMPATIBLE`)
 and delete the file. `STATUS_FAILURE_ABORTED` (user cancelled the sheet) → `Idle`, no error dialog.
 

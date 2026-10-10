@@ -15,7 +15,8 @@ class ReleaseParserTest {
 
     private fun JSONObject.asset(i: Int): JSONObject = getJSONArray("assets").getJSONObject(i)
 
-    private fun parse(body: String, status: Int = 200) = ReleaseParser.parse(status, body)
+    private fun parse(body: String, status: Int = 200, base: String = "https://github.com") =
+        ReleaseParser.parse(status, body, "p4u/openfy", base)
 
     private fun ok(result: ParseResult): Release = (result as? ParseResult.Ok ?: error("expected Ok, got $result")).release
 
@@ -115,6 +116,57 @@ class ReleaseParserTest {
         assertTrue(parse("{}", 403) is ParseResult.Invalid)
         assertTrue(parse("<html>", 200) is ParseResult.Invalid)
         assertTrue(parse("[]", 200) is ParseResult.Invalid)
+    }
+
+    private val apkUrl = "https://github.com/p4u/openfy/releases/download/v0.2.0/openfy-0.2.0.apk"
+
+    @Test
+    fun apkUrlMustBeInTheConfiguredRepository() {
+        listOf(
+            "https://github.com/evil/openfy/releases/download/v0.2.0/openfy-0.2.0.apk",
+            "https://github.com/p4u/other/releases/download/v0.2.0/openfy-0.2.0.apk",
+            "https://github.com/p4u/openfy-evil/releases/download/v0.2.0/openfy-0.2.0.apk",
+            "https://github.com/p4u/openfy/releases/download/v0.1.0/openfy-0.2.0.apk",
+            "https://github.com/p4u/openfy/releases/download/v0.2.0/openfy-0.2.0.apk?x=1",
+            "https://github.com/p4u/openfy/releases/download/v0.2.0/other.apk",
+            "https://github.com.evil.com/p4u/openfy/releases/download/v0.2.0/openfy-0.2.0.apk",
+            "https://evil.com/p4u/openfy/releases/download/v0.2.0/openfy-0.2.0.apk",
+            "http://github.com/p4u/openfy/releases/download/v0.2.0/openfy-0.2.0.apk",
+            "https://github.com/p4u/openfy/archive/v0.2.0.apk",
+        ).forEach { url ->
+            assertEquals(url, ParseResult.Invalid("APK asset is hosted outside the release"), parse(variant { asset(0).put("browser_download_url", url) }))
+        }
+    }
+
+    @Test
+    fun repositoryMatchIsCaseInsensitive() {
+        val url = "https://github.com/P4U/OpenFy/releases/download/v0.2.0/openfy-0.2.0.apk"
+        assertEquals(url, ok(parse(variant { asset(0).put("browser_download_url", url) })).apkUrl)
+    }
+
+    @Test
+    fun sidecarUrlMustBeInTheConfiguredRepository() {
+        val body = variant {
+            asset(0).remove("digest")
+            asset(1).put("browser_download_url", "https://github.com/evil/openfy/releases/download/v0.2.0/openfy-0.2.0.apk.sha256")
+        }
+        assertEquals(ParseResult.Invalid("checksum asset is hosted outside the release"), parse(body))
+        val swapped = variant { asset(1).put("browser_download_url", "$apkUrl.sha256.txt") }
+        assertTrue(parse(swapped) is ParseResult.Invalid)
+    }
+
+    @Test
+    fun debugTestOriginIsPinnedTheSameWay() {
+        val base = "http://127.0.0.1:8765"
+        val local = "$base/p4u/openfy/releases/download/v0.2.0/openfy-0.2.0.apk"
+        val body = variant {
+            asset(0).put("browser_download_url", local)
+            asset(1).put("browser_download_url", "$local.sha256")
+        }
+        assertEquals(local, ok(parse(body, base = base)).apkUrl)
+        // The same release is refused by a production parser, and github.com URLs are refused by the test one.
+        assertTrue(parse(body) is ParseResult.Invalid)
+        assertTrue(parse(fixture, base = base) is ParseResult.Invalid)
     }
 
     @Test

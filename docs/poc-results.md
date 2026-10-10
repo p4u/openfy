@@ -485,6 +485,26 @@ Setup (emulator `emulator-5554`, Android 15, Google Play image; the physical dev
 Across 5-7 the log contains no `session ... committed` line, so the refusals happen before any `PackageInstaller`
 session exists. All error lines are logged as `update: ...` under the `Openfy` tag.
 
+Re-verified after review fixes (docs/reviews/updater-review-fable.md; emulator only, same fake GitHub, now with
+`-PversionName=...` debug builds `0.9.0`/`0.9.1`/`0.9.2` and asset URLs `http://127.0.0.1:8765/p4u/openfy/releases/download/<tag>/<name>`,
+which satisfy the new repo pinning):
+
+- Happy path 0.9.0 -> 0.9.1: offer, permission explanation, Settings round trip, download, session re-hash, confirm sheet,
+  Play Protect page ("More details", then the lower "Install without scanning" line); `versionCode=90199 versionName=0.9.1
+  installerPackageName=dev.openfy.debug`. The new process logs `install status=0` and ignores it (no active session there);
+  `cache/updates` gone, `last_installed_code=90199`.
+- MAJOR-2: with `settings put system font_scale 1.3` while Settings was open, `wm_relaunch_activity` recreated
+  `MainActivity`; granting the permission and pressing Back still started the download and reached the confirm sheet.
+- MAJOR-3: with the sheet up, Home then back relaunches the sheet (state stays `NeedsUserAction`); Cancel gives
+  `status=3` -> `Idle`, and a manual check then offers the update again. For the break-out itself a throwaway build that
+  skips `startActivity(confirm)` (not committed) was used, since a real sheet relaunches on every start: the manual
+  check logged `manual check abandons the pending install`, abandoned the session (its late `status=3` was ignored by
+  the session-id check) and offered 0.9.2 again.
+- Pinning: a release whose asset URL points at `/evil/other/releases/download/...` shows "Update check failed: APK asset
+  is hosted outside the release."
+- Side effect noted: after an Activity recreation while the sheet is up, the new Activity launches the sheet a second
+  time (two identical sheets, harmless; Cancel twice).
+
 Findings worth keeping:
 
 - The settings round trip works with `registerForActivityResult`: after Back the install continues from the same
@@ -497,7 +517,7 @@ Findings worth keeping:
   conditions (update ownership, target SDK of the installed app); the code always handles `STATUS_PENDING_USER_ACTION`,
   so this only changes how often the user taps. Worth re-measuring on a release build and a physical device.
 - Google Play Protect's scan prompt is a property of this Google Play emulator image, not of the app.
-- Debug versionName carries AGP's `-debug` suffix: `Version.parseInstalled` strips it, and the archive versionName
+- (Superseded: debug builds no longer have a `-debug` suffix, and the suffix handling was removed.) Debug versionName carried AGP's `-debug` suffix: `Version.parseInstalled` strips it, and the archive versionName
   comparison strips it in debug builds only. A name outside the grammar (the old `0.1.0-poc`) counts as `0.0.0-dev`.
 
 ## H0: Chrome control (NOT TESTED, needs account)

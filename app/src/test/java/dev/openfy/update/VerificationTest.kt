@@ -64,8 +64,7 @@ class VerificationTest {
         signers: SignerSource = same,
         installedFacts: PackageFacts = installed,
         expected: String = "0.2.1",
-        isDebug: Boolean = false,
-    ) = PreInstallCheck.refusal(installedFacts, archive, signers, "/x.apk", expected, isDebug)
+    ) = PreInstallCheck.refusal(installedFacts, archive, signers, "/x.apk", expected)
 
     @Test
     fun newerSamePackageSameSignerPasses() {
@@ -94,10 +93,8 @@ class VerificationTest {
     }
 
     @Test
-    fun debugSuffixIsIgnoredOnlyInDebugBuilds() {
-        val debugApk = good.copy(versionName = "0.2.1-debug")
-        assertNull(refusal(archive = debugApk, isDebug = true))
-        assertTrue(refusal(archive = debugApk, isDebug = false) != null)
+    fun aDebugSuffixInTheArchiveNameIsNotTolerated() {
+        assertTrue(refusal(archive = good.copy(versionName = "0.2.1-debug")) != null)
     }
 
     @Test
@@ -183,6 +180,15 @@ class VerificationTest {
         val out = ByteArrayOutputStream()
         assertThrows(UpdateException::class.java) { copyBounded(ByteArrayInputStream(ByteArray(20_001)), out, 20_000) }
         assertTrue(out.size() <= 20_000)
+    }
+
+    @Test
+    fun overflowMessageNamesWhatWasBeingRead() {
+        fun message(what: String) = assertThrows(UpdateException::class.java) {
+            copyBounded(ByteArrayInputStream(ByteArray(5000)), ByteArrayOutputStream(), 4096, what = what)
+        }.message!!
+        assertEquals("checksum file is larger than the allowed 4096 bytes", message("checksum file"))
+        assertEquals("release information is larger than the allowed 4096 bytes", message("release information"))
     }
 
     @Test

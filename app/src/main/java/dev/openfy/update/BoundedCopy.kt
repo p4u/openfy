@@ -26,12 +26,14 @@ class UpdateException(message: String, cause: Throwable? = null) : IOException(m
 /**
  * Copies [input] to [output], feeding [digest] with exactly the bytes written, and aborts as soon as more than
  * [limit] bytes arrive. Returns the byte count. [onProgress] gets the running total and may throw to cancel.
+ * [what] names the thing being copied in the overflow message ("download", "release information", ...).
  */
 fun copyBounded(
     input: InputStream,
     output: OutputStream,
     limit: Long,
     digest: MessageDigest? = null,
+    what: String = "download",
     onProgress: (Long) -> Unit = {},
 ): Long {
     val buf = ByteArray(8 * 1024)
@@ -40,7 +42,7 @@ fun copyBounded(
         val n = input.read(buf)
         if (n < 0) break
         total += n
-        if (total > limit) throw UpdateException("download exceeds the expected size ($limit bytes)")
+        if (total > limit) throw UpdateException("$what is larger than the allowed $limit bytes")
         digest?.update(buf, 0, n)
         output.write(buf, 0, n)
         onProgress(total)

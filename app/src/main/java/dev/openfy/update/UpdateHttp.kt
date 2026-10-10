@@ -57,14 +57,23 @@ internal class UpdateHttp(private val hosts: UpdateHosts, private val userAgent:
         }
     }
 
-    /** Small text response, capped at [cap] bytes. Returns status and body. */
-    fun getText(url: String, cap: Long, accept: String): Pair<Int, String> =
+    /**
+     * Small text response, capped at [cap] bytes. Returns status and body. [what] names the response in the
+     * overflow message. An oversized error body is dropped (empty) so the HTTP status still reaches the caller.
+     */
+    fun getText(url: String, cap: Long, accept: String, what: String): Pair<Int, String> =
         get(url, READ_TIMEOUT_MS, accept) { status, conn ->
-            val stream = if (status in 200..299) conn.inputStream else conn.errorStream
+            val ok = status in 200..299
+            val stream = if (ok) conn.inputStream else conn.errorStream
             val body = stream?.use { input ->
                 val out = java.io.ByteArrayOutputStream()
-                copyBounded(input, out, cap)
-                out.toString(Charsets.UTF_8.name())
+                try {
+                    copyBounded(input, out, cap, what = what)
+                    out.toString(Charsets.UTF_8.name())
+                } catch (e: UpdateException) {
+                    if (ok) throw e
+                    ""
+                }
             } ?: ""
             status to body
         }
@@ -84,7 +93,7 @@ internal class UpdateHttp(private val hosts: UpdateHosts, private val userAgent:
             val md: MessageDigest = Sha256.newDigest()
             val written = try {
                 conn.inputStream.use { input ->
-                    FileOutputStream(dest).use { out -> copyBounded(input, out, expectedSize, md, onProgress) }
+                    FileOutputStream(dest).use { out -> copyBounded(input, out, expectedSize, md, onProgress = onProgress) }
                 }
             } catch (e: IOException) {
                 dest.delete()

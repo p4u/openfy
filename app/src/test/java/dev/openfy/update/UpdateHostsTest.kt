@@ -57,6 +57,26 @@ class UpdateHostsTest {
     }
 
     @Test
+    fun urlParsingTricksAreRejectedBeforeAnythingConnects() {
+        // java.net.URI decides here, java.net.URL connects later: every case must fail closed in URI.
+        listOf(
+            "https://github.com./x", // trailing dot
+            "https://api.github.com./repos/p4u/openfy/releases/latest",
+            "https://gith\u00fcb.com/x", // raw IDN
+            "https://xn--gthub-9ta.com/x", // punycode
+            "https://github.com%2eevil.com/x", // percent-encoded dot
+            "https://github%2ecom/x",
+            "https://github.com\\@evil.com/x", // backslash
+            "https://github.com\\evil.com/x",
+            "https://evil.com\\.github.com/x",
+            "https://github.com:443@evil.com/x", // userinfo
+            "https://api.github.com@github.com/x",
+            "https://github.com%40evil.com/x",
+            "https://git_hub.com/x",
+        ).forEach { assertFalse(it, prod.isAllowed(it)) }
+    }
+
+    @Test
     fun rejectsOtherSchemesAndGarbage() {
         listOf("ftp://github.com/x", "file:///etc/passwd", "//github.com/x", "github.com/x", "", "https://", "https://exa mple.com")
             .forEach { assertFalse(it, prod.isAllowed(it)) }
@@ -92,6 +112,21 @@ class UpdateHostsTest {
         )) {
             assertTrue(loc, prod.step(api, 302, loc, 0) is RedirectStep.Reject)
         }
+    }
+
+    @Test
+    fun schemeRelativeAndOtherTrickyLocationsAreRejected() {
+        for (loc in listOf(
+            "//evil.com/x", "//github.com@evil.com/x", "\\\\evil.com\\x", "https://github.com./x",
+            "https://github.com%2eevil.com/x", "https://github.com\\@evil.com/x", "//api.github.com:8443/x",
+        )) {
+            assertTrue(loc, prod.step(api, 302, loc, 0) is RedirectStep.Reject)
+        }
+        // Java reads "///evil.com/x" as an empty authority plus the path "/evil.com/x" on the current host; what is
+        // followed is that resolved string, so it stays on github.com (nothing connects to evil.com).
+        assertEquals(RedirectStep.Follow("https://github.com/evil.com/x"), prod.step(api, 302, "///evil.com/x", 0))
+        // A scheme-relative Location to an allowed host keeps https and is followed.
+        assertEquals(RedirectStep.Follow("https://objects.githubusercontent.com/x"), prod.step(api, 302, "//objects.githubusercontent.com/x", 0))
     }
 
     @Test
@@ -162,6 +197,13 @@ class UpdateHostsTest {
             "https://api.github.com/repos/p4u/openfy/releases/latest",
             UpdateHosts.latestUrl("p4u/openfy", isDebug = true, testBase = ""),
         )
+    }
+
+    @Test
+    fun downloadBaseIsGithubUnlessADebugBuildHasATestBase() {
+        assertEquals("https://github.com", UpdateHosts.downloadBase(isDebug = false, testBase = testBase))
+        assertEquals("https://github.com", UpdateHosts.downloadBase(isDebug = true, testBase = ""))
+        assertEquals(testBase, UpdateHosts.downloadBase(isDebug = true, testBase = testBase))
     }
 
     @Test

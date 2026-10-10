@@ -44,11 +44,11 @@ class VersionTest {
     }
 
     @Test
-    fun installedNameDropsTheDebugSuffixAndFallsBackToDev() {
-        assertEquals(v("0.9.0"), Version.parseInstalled("0.9.0-debug"))
+    fun installedNameFallsBackToDev() {
         assertEquals(v("0.9.0"), Version.parseInstalled("0.9.0"))
-        assertEquals(Version.DEV, Version.parseInstalled("0.0.0-dev-debug"))
+        assertEquals(Version.DEV, Version.parseInstalled("0.0.0-dev"))
         assertEquals(Version.DEV, Version.parseInstalled("0.1.0-poc"))
+        assertEquals(Version.DEV, Version.parseInstalled("0.9.0-debug"))
         assertNotNull(Version.parseInstalled("0.1.0-poc-debug"))
     }
 }

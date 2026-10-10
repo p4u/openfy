@@ -25,7 +25,6 @@ data class Version(val major: Int, val minor: Int, val patch: Int, val rc: Int?,
     companion object {
         val DEV = Version(0, 0, 0, null, dev = true)
         private const val DEV_NAME = "0.0.0-dev"
-        private const val DEBUG_SUFFIX = "-debug"
         private val GRAMMAR = Regex("""^v?(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$""")
 
         /** Strict parse; a leading `v` is accepted. Null if [text] is not in the grammar or out of range. */
@@ -42,14 +41,9 @@ data class Version(val major: Int, val minor: Int, val patch: Int, val rc: Int?,
         }
 
         /**
-         * The running app's own `versionName`. Debug builds carry AGP's `-debug` suffix, which is dropped; anything
-         * that is still not in the grammar (an old PoC name such as `0.1.0-poc`) counts as [DEV], i.e. lowest, so the
-         * signer and versionCode checks decide.
+         * The running app's own `versionName`. Anything not in the grammar (an old PoC name such as `0.1.0-poc` or
+         * `0.1.0-debug`) counts as [DEV], i.e. lowest, so the signer and versionCode checks decide.
          */
-        fun parseInstalled(versionName: String): Version =
-            parse(versionName.removeSuffix(DEBUG_SUFFIX)) ?: DEV
-
-        /** Name of an APK built from a debug variant, with AGP's suffix removed (debug builds only). */
-        fun stripDebugSuffix(versionName: String): String = versionName.removeSuffix(DEBUG_SUFFIX)
+        fun parseInstalled(versionName: String): Version = parse(versionName) ?: DEV
     }
 }

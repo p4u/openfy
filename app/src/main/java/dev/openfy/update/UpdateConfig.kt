@@ -15,6 +15,10 @@ object UpdateConfig {
     val latestUrl: String
         get() = UpdateHosts.latestUrl(BuildConfig.UPDATER_REPO, BuildConfig.DEBUG, BuildConfig.UPDATER_TEST_BASE)
 
+    /** Where the release's asset URLs must live (ReleaseParser pins them to `<this>/<UPDATER_REPO>/releases/download/`). */
+    val downloadBase: String
+        get() = UpdateHosts.downloadBase(BuildConfig.DEBUG, BuildConfig.UPDATER_TEST_BASE)
+
     val userAgent: String get() = "openfy/${BuildConfig.VERSION_NAME} (Android ${Build.VERSION.SDK_INT})"
 
     val installedVersion: Version get() = Version.parseInstalled(BuildConfig.VERSION_NAME)

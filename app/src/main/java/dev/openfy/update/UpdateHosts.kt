@@ -82,6 +82,10 @@ class UpdateHosts private constructor(private val testOrigin: Origin?) {
             return UpdateHosts(Origin("127.0.0.1", port))
         }
 
+        /** Origin of the release asset URLs ("https://github.com"); [testBase] only counts for debug builds. */
+        fun downloadBase(isDebug: Boolean, testBase: String): String =
+            if (isDebug && testBase.isNotEmpty()) testBase else "https://github.com"
+
         /** The `releases/latest` URL for [repo] ("owner/name"); [testBase] only counts for debug builds. */
         fun latestUrl(repo: String, isDebug: Boolean, testBase: String): String {
             val base = if (isDebug && testBase.isNotEmpty()) testBase else "https://api.github.com"

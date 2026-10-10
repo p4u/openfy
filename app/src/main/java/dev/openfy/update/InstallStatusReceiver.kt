@@ -18,7 +18,12 @@ class InstallStatusReceiver : BroadcastReceiver() {
         if (intent.action != ACTION) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-        Log.i(TAG, "update: install status=$status message=$message")
+        val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
+        Log.i(TAG, "update: install status=$status session=$sessionId message=$message")
+        if (!UpdateManager.isActiveSession(sessionId)) {
+            Log.i(TAG, "update: ignoring a status for session $sessionId (not the active one)")
+            return
+        }
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = if (Build.VERSION.SDK_INT >= 33) {
