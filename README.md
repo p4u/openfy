@@ -23,8 +23,11 @@ This is a personal research tool. It does not and will not:
 - download, record or otherwise capture streams;
 - circumvent DRM (playback uses the web player's own EME/Widevine pipeline, L3 is enough);
 - defeat Google's embedded-WebView sign-in policy (`disallowed_useragent` is the expected, documented outcome);
-- use private Spotify APIs or Web API keys. Native code's only network access is fetching the artwork URL
-  the page itself published through `navigator.mediaSession`.
+- use private Spotify APIs or Web API keys. Native code's only network access **towards Spotify** is fetching the
+  artwork URL the page itself published through `navigator.mediaSession`. The only other native network access is
+  the self-updater ([`docs/UPDATER.md`](docs/UPDATER.md)): it talks exclusively to GitHub (`api.github.com` and the
+  release-asset hosts) over HTTPS to check for and download new releases of this app, at most once a day, sends no
+  identifiers beyond its own version string, and never touches the Spotify session.
 
 The shell stays honestly identifiable as a WebView host: Android WebView sends `X-Requested-With: <package>`
 on every request and that cannot be removed. The shell injects two scripts. `ui-adapt.js` is the UI adaptation
@@ -115,6 +118,27 @@ The small translucent button in the top-right corner opens the debug menu:
 - **Diagnostics** runs `__osShell.diag()` and shows the result.
 - **Reload**.
 - **UI adaptation: on/off** switches the UI adaptation mode (default on) and reloads.
+- **Check for updates** runs the updater by hand (see Updates).
+
+## Updates
+
+The app can update itself from the GitHub Releases of `p4u/openfy` (spec: [`docs/UPDATER.md`](docs/UPDATER.md), code:
+`app/src/main/java/dev/openfy/update/`).
+
+- **When:** release builds check on app start at most once per 24 h; debug builds never check by themselves and use
+  the debug menu item **Check for updates**. A newer release shows a dialog with the notes and **Install / Later /
+  Skip this version**.
+- **What is verified before anything is installed:** HTTPS only and an exact host allow-list (`api.github.com`,
+  `github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`, redirects followed by hand);
+  the SHA-256 of the download against the release's `digest` (or `.sha256` asset); package name, a strictly higher
+  `versionCode`; and that the APK is signed by the same certificate(s) as the installed app. The signer check, backed
+  by Android's own update rule, is the real authentication; the checksum only catches corruption.
+- **Install:** `PackageInstaller` session. Android asks for the "install unknown apps" permission for openfy once and
+  shows its own confirmation sheet (always for the first update after a sideload).
+- **Limits:** no protection against a leaked signing key; a debug build refuses release-signed APKs (different key).
+- **Testing:** the pure logic has JVM tests (`app/src/test/java/dev/openfy/update/`). A debug-only build property
+  `-PupdaterTestBase=http://127.0.0.1:<port>` lets an emulator run be pointed at a local fake GitHub; release builds
+  cannot carry it (the value is empty and the host policy ignores it). Run record: `docs/poc-results.md`, H9.
 
 ## Architecture in one paragraph
 

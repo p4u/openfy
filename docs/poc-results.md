@@ -442,6 +442,64 @@ Nothing else on the device was touched (no playback, likes, follows or settings)
   dependence on the DOM existing) is the right mechanism for hide rules.
 - The consent dialog (OneTrust) overlays the bottom of the page, can hide popovers behind it, and is never touched.
 
+## H9 (self-update)
+
+Spec: `docs/UPDATER.md` §2-§5; code in `app/src/main/java/dev/openfy/update/`. Status: **PASS on the emulator** (happy
+path through `PackageInstaller`, checksum from the API `digest` and from a `.sha256` sidecar, and the refusal paths). Not
+run here: the real GitHub hosts and the release-signed pipeline (§5.2 steps 1-7 against a scratch repo), silent update,
+installing while playing, airplane mode with a real radio off.
+
+Build and tests: `./gradlew assembleDebug testDebugUnitTest lint lintRelease testReleaseUnitTest` BUILD SUCCESSFUL, 113
+JVM tests (67 in `dev.openfy.update`: version vectors, parser fixture `app/src/test/resources/update/release-latest.json`
+incl. missing asset / missing digest / two APKs / draft / pre-release / tag mismatch / 404, host allow-list incl.
+`github.com.evil.com`, `api.github.com:8443`, `http://`, userinfo tricks, redirect policy, signer set equality,
+downgrade and same-version refusal, size cap, streaming SHA-256, `UpdateDecision`, and "release config rejects http");
+`node --test tools/test/*.test.mjs` 47/47. The release `BuildConfig.UPDATER_TEST_BASE` is `""` and the release APK
+contains no `network_security_config`.
+
+Setup (emulator `emulator-5554`, Android 15, Google Play image; the physical device was not touched):
+
+- Debug-only test override: `-PupdaterTestBase=http://127.0.0.1:8765` fills `BuildConfig.UPDATER_TEST_BASE` (debug build
+  type only) and `app/src/debug` adds a network security config allowing cleartext to `127.0.0.1`. `UpdateHosts.forBuild`
+  ignores the value unless `BuildConfig.DEBUG`, and only accepts exactly `http://127.0.0.1:<port>`.
+- Versions without touching the versioning code: a temporary local edit of `versionCode`/`versionName` in
+  `app/build.gradle.kts`, reverted after each build. Builds: `0.9.0`/90099, `0.9.1`/90199, `0.9.2`/90299, and `0.9.2`/80000
+  (low code). Same debug keystore, except one copy re-signed with a throwaway keystore (`/tmp/e2e/other.jks`, SHA-256
+  `14f692d0...` against the debug key `89352919...`) with `apksigner`.
+- Fake GitHub: `python3 -m http.server 8765 --directory /tmp/e2e/srv` serving `repos/p4u/openfy/releases/latest` (static
+  JSON, asset `browser_download_url` on the same origin) and the APK, `adb reverse tcp:8765 tcp:8765`.
+- UI driven with `adb shell input tap` using `uiautomator dump` to find buttons.
+
+| # | Scenario | Result |
+|---|---|---|
+| 1 | v0.9.0 installed (`adb install`), debug menu, **Check for updates**, served `v0.9.1` with `digest` | Dialog "Update available: 0.9.1", notes, "Size: 3.9 MB", debug footer; buttons Skip this version / Later / Install (`screenshots/update-dialog.png`) |
+| 2 | Install without "install unknown apps" granted | Explanation dialog, "Open settings", system page "Install unknown apps" for openfy debug, "Allow from this source", Back: download started on return with no further prompt |
+| 3 | After download | System sheet "Do you want to update this app?" (`screenshots/update-confirm.png`), then (this image only) a Google Play Protect "App scan recommended" page; "Install without scanning". `dumpsys package`: `versionCode=90199 versionName=0.9.1-debug installerPackageName=dev.openfy.debug`. Log: `update: session ... committed`, `install status=-1`, later `status=0 INSTALL_SUCCEEDED`; `cache/updates` empty after restart; prefs `last_installed_code=90199` |
+| 4 | Second update `0.9.2`, **no** `digest`, `.sha256` sidecar only | Sidecar fetched and matched, update installed (`versionCode=90299`). The confirm sheet was shown again even though openfy is now the installer of record (see findings) |
+| 5 | Wrong checksum (`digest` = 64 zeros) | Dialog "The download is corrupt or was tampered with (SHA-256 mismatch).", log `sha256 mismatch expected=0000... actual=4f62...`, file deleted, no session created |
+| 6 | Downgrade: tag `v0.9.2` but the APK has `versionCode` 80000 (installed 90199) | Dialog "The downloaded APK (versionCode 80000) is not newer than the installed one (90199). Downgrades are refused.", no session |
+| 7 | APK signed with a different key (`0.9.2`/90299, throwaway keystore) | Dialog "The downloaded APK is signed with a different key than the installed app. Uninstall and install the release APK from GitHub instead.", no session |
+| 8 | Release tag older than installed (`v0.9.0` vs 0.9.1) | Toast "You have the latest version (0.9.1-debug)." (log `update: up to date`) |
+| 9 | Server unreachable (`adb reverse --remove`) | Dialog "Update check failed: Failed to connect to /127.0.0.1:8765", log `update: check failed` |
+
+Across 5-7 the log contains no `session ... committed` line, so the refusals happen before any `PackageInstaller`
+session exists. All error lines are logged as `update: ...` under the `Openfy` tag.
+
+Findings worth keeping:
+
+- The settings round trip works with `registerForActivityResult`: after Back the install continues from the same
+  `UpdateManager` call, and the status receiver delivered `STATUS_PENDING_USER_ACTION`, which `MainActivity` launched
+  from the foreground.
+- `STATUS_SUCCESS` is delivered to the **new** process (pid changed), as the spec expects: the old one is replaced
+  during the install. Only the new process logs `install status=0`.
+- `USER_ACTION_NOT_REQUIRED` did not suppress the confirm sheet on the second update on this emulator image
+  (installer of record was already `dev.openfy.debug`). Per the `SessionParams` reference the silent path has further
+  conditions (update ownership, target SDK of the installed app); the code always handles `STATUS_PENDING_USER_ACTION`,
+  so this only changes how often the user taps. Worth re-measuring on a release build and a physical device.
+- Google Play Protect's scan prompt is a property of this Google Play emulator image, not of the app.
+- Debug versionName carries AGP's `-debug` suffix: `Version.parseInstalled` strips it, and the archive versionName
+  comparison strips it in debug builds only. A name outside the grammar (the old `0.1.0-poc`) counts as `0.0.0-dev`.
+
 ## H0: Chrome control (NOT TESTED, needs account)
 
 Steps for a real phone:

@@ -33,8 +33,11 @@ are in [`poc-results.md`](poc-results.md). The changelog is at the end.
   or dismisses first-party app-install nags and first-party Premium upsell banners, and nothing else.
 - No downloading or recording of streams, and no DRM circumvention.
 - No attempt to defeat Google's embedded-WebView OAuth policy (`disallowed_useragent`).
-- No private Spotify APIs and no Spotify Web API keys. Native code's only network access is fetching the
-  artwork URL the page itself published through `navigator.mediaSession`.
+- No private Spotify APIs and no Spotify Web API keys. Native code's only network access **towards Spotify** is
+  fetching the artwork URL the page itself published through `navigator.mediaSession`. The only other native
+  network access is the self-updater (`docs/UPDATER.md`): it talks exclusively to GitHub (`api.github.com` and the
+  release-asset hosts) over HTTPS to check for and download new releases of this app, at most once a day, sends no
+  identifiers beyond its own version string, and never touches the Spotify session.
 - No spoofing beyond the UA string and UA client hints (§2.2). Other JS-visible differences from Chrome
   (`navigator.platform`, `navigator.languages`, a JS-visible Media Session polyfill) are measured and recorded,
   not patched.
@@ -290,6 +293,7 @@ the dismissal), and the media bridge is unchanged (`diag().session === "polyfill
 ## 3. Tech stack
 Kotlin, minSdk 26, target/compileSdk 35, AGP 8.7.x, Gradle 8.14.3, JDK 17, androidx.webkit (latest),
 androidx.media (MediaSessionCompat), androidx.core, androidx.activity. No other dependencies. Single module `:app`.
+Permission `REQUEST_INSTALL_PACKAGES` for the self-updater.
 
 ## 4. PoC: hypotheses (replaces v0.1 §4)
 
@@ -331,6 +335,7 @@ polyfill on the host.
    first-party promotion removed by §2.9 (switchable). State this in the thesis.
 6. `androidx.media` is in maintenance. Media3 `MediaSessionService` + `SimpleBasePlayer` is the planned
    upgrade, configured not to request audio focus.
+7. The updater's trust root is the release signing key held in GitHub environment secrets (UPDATER.md §3.1).
 
 ## 6. Alternatives considered
 - **Custom Tabs / TWA:** runs the site in the user's real Chrome, where Google login, passkeys, Widevine,
@@ -341,6 +346,8 @@ polyfill on the host.
   GeckoView is limited and the app becomes much larger. Rejected for the PoC.
 
 ## Changelog
+- Self-updater (`docs/UPDATER.md`, package `dev.openfy.update`): checks the GitHub Releases of this repo, verifies
+  SHA-256, package, version and signer, installs through `PackageInstaller`. Non-goal wording, §3 and §5 amended.
 - v0.4: UI adaptation mode (§2.9, H8), a **deliberate deviation** from the v0.3 non-goal "no content modification",
   on by default with a debug-menu toggle. It hides the "Open App" header button and the first-party Premium banner
   (CSS in an adopted stylesheet) and dismisses the "get the app" popover by clicking its own "Not now" button; it
