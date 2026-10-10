@@ -70,6 +70,13 @@ node --test tools/test/*.test.mjs   # host tests: Media Session polyfill, UI ada
 Stack: Kotlin 2.0.21, AGP 8.7.3, Gradle 8.14.3, compileSdk/targetSdk 35, minSdk 26, androidx.webkit 1.15.0,
 androidx.media 1.7.1. No other dependencies.
 
+## Releasing
+
+Publishing a GitHub Release (tag `vX.Y.Z` or `vX.Y.Z-rc.N`) builds, signs and verifies `openfy-<version>.apk` in
+GitHub Actions and attaches it to the release. One-time setup, how to cut a release and the keystore backup rules
+are in [`docs/RELEASING.md`](docs/RELEASING.md); the spec is `docs/UPDATER.md` section 1. Local signed build:
+`./gradlew assembleRelease -PversionName=0.1.0 -PrequireSigning=true`.
+
 ## Install and run
 
 ```sh
@@ -209,4 +216,5 @@ Log prefixes you will see: `startup:`, `identity:`, `drm:`, `nav:`, `permission:
   no native chrome.
 - `androidx.media` (MediaSessionCompat) is in maintenance mode; Media3 is the planned upgrade (without audio focus).
 - Artwork is fetched with a plain `HttpURLConnection`; no caching beyond the current track.
-- The release build is unsigned and unminified; this PoC targets debug builds.
+- The release build is unminified (`isMinifyEnabled = false`, by decision). It is signed only when a release keystore is
+  configured (see `docs/RELEASING.md`); otherwise it is left unsigned.
