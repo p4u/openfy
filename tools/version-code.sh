@@ -8,7 +8,8 @@
 # Accepts a tag (leading "v" required) and prints the versionName and versionCode, or exits 1.
 set -euo pipefail
 
-TAG_RE='^v([0-9]+)\.([0-9]+)\.([0-9]+)(-rc\.([0-9]+))?$'
+# No leading zeros: v01.2.3 would collide with v1.2.3. rc number is 1..98, so 1-2 digits, first non-zero.
+TAG_RE='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.([1-9][0-9]?))?$'
 
 # version_code_from_tag <tag>: prints "<versionName> <versionCode>", returns 1 on an invalid tag.
 version_code_from_tag() {
@@ -45,7 +46,7 @@ v2000.99.99 2000.99.99 2000999999
 v0.0.1-rc.98 0.0.1-rc.98 198
 v0.8.9 0.8.9 80999
 EOF
-  for tag in 1.0.0 v1.0 v1.0.0-rc.0 v1.0.0-rc.99 v1.0.0-rc v1.0.0-beta.1 v1.100.0 v1.0.100 v2001.0.0 v99999999999.0.0 "v1.0.0 " ""; do
+  for tag in 1.0.0 v1.0 v1.0.0-rc.0 v1.0.0-rc.99 v1.0.0-rc.00 v1.0.0-rc.01 v1.0.0-rc.001 v01.0.0 v1.00.0 v1.0.00 v00.0.0 v1.0.0-rc v1.0.0-beta.1 v1.100.0 v1.0.100 v2001.0.0 v99999999999.0.0 "v1.0.0 " ""; do
     if version_code_from_tag "$tag" >/dev/null 2>&1; then echo "FAIL '$tag' should be rejected"; fail=1; fi
   done
   (( fail == 0 )) && echo "version-code selftest OK"

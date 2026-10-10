@@ -8,7 +8,8 @@ plugins {
 // ---- Versioning (docs/UPDATER.md §1.2) ------------------------------------------------------------
 // -PversionName=X.Y.Z[-rc.N] (no leading "v"). Missing -> 0.0.0-dev / code 1. Invalid -> configuration fails.
 // versionCode = X*1_000_000 + Y*10_000 + Z*100 + (final ? 99 : N). Keep in sync with tools/version-code.sh.
-val versionGrammar = "^(\\d+)\\.(\\d+)\\.(\\d+)(?:-rc\\.(\\d+))?$"
+// No leading zeros (01.2.3 would collide with 1.2.3); rc number is 1..98, one or two digits, first non-zero.
+val versionGrammar = "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-rc\\.([1-9]\\d?))?$"
 
 fun versionFromName(name: String): Pair<String, Int> {
     fun bad(why: String): Nothing = throw GradleException(
@@ -44,7 +45,8 @@ tasks.register("checkVersionVectors") {
             check(got == name to code) { "versionFromName($name) = $got, expected ${name to code}" }
         }
         listOf("v1.0.0", "1.0", "1.0.0-rc.0", "1.0.0-rc.99", "1.0.0-rc", "1.0.0-beta.1", "1.100.0", "1.0.100",
-            "2001.0.0", "99999999999.0.0", "", "1.0.0 ").forEach { bad ->
+            "2001.0.0", "99999999999.0.0", "", "1.0.0 ", "01.0.0", "1.00.0", "1.0.00", "00.0.0",
+            "1.0.0-rc.00", "1.0.0-rc.01", "1.0.0-rc.001").forEach { bad ->
             check(runCatching { versionFromName(bad) }.exceptionOrNull() is GradleException) {
                 "versionFromName('$bad') should have been rejected"
             }

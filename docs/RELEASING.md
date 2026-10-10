@@ -15,14 +15,29 @@ builtin, so the value never appears in a process list).
 
 ### 1. Create the `release` environment
 
+Create it with a required reviewer, so that every run that can read the signing secrets needs a manual approval, and
+with a deployment policy of "selected branches and tags":
+
 ```sh
-gh api --method PUT repos/p4u/openfy/environments/release
+ME=$(gh api user --jq .id)
+gh api --method PUT repos/p4u/openfy/environments/release --input - <<JSON
+{"reviewers":[{"type":"User","id":$ME}],
+ "deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}
+JSON
+gh api --method POST repos/p4u/openfy/environments/release/deployment-branch-policies -f name='v*'  -f type=tag
+gh api --method POST repos/p4u/openfy/environments/release/deployment-branch-policies -f name=main -f type=branch
 ```
 
-Optional but recommended: require a reviewer, so that every run that can read the signing secrets needs a manual
-approval. In the web UI: Settings -> Environments -> `release` -> Required reviewers -> add yourself. (A sole
-maintainer can still approve their own runs; the gate protects against a compromised workflow change or a stray
-dispatch, not against yourself.)
+(Web UI: Settings -> Environments -> `release` -> Required reviewers, and Deployment branches and tags -> Selected
+branches and tags.) Keep both rules:
+
+- the tag rule `v*` is what a published release runs on (`GITHUB_REF` is `refs/tags/vX.Y.Z`); a policy that only
+  allows `main` would make every real release fail with "Branch 'vX.Y.Z' is not allowed to deploy to release",
+  while dry runs from `main` would keep working and hide the problem;
+- the branch rule `main` is what the manual dry run uses; any other branch cannot reach the signing secrets.
+
+A sole maintainer can still approve their own runs; the reviewer gate protects against a compromised collaborator or
+a stray dispatch, not against yourself. Required reviewers is the documented default: do not skip it.
 
 ### 2. Add the four secrets to the environment
 
@@ -93,7 +108,7 @@ gh release create v0.2.0-rc.1 --repo p4u/openfy --target main --prerelease \
   --title "openfy 0.2.0-rc.1" --notes "Release candidate."
 ```
 
-Publishing the release starts the workflow (approve it if the environment requires a reviewer). A few minutes
+Publishing the release starts the workflow (approve the run in the Actions tab). A few minutes
 later the release has `openfy-<version>.apk` and `openfy-<version>.apk.sha256`. Check:
 
 ```sh
@@ -106,8 +121,9 @@ If the run fails, fix the cause, then either re-run the failed workflow run (the
 the release and tag and publish again. A failed run never uploads an unsigned or wrongly signed APK: the uploads are
 the last steps, after all checks.
 
-The workflow builds the commit the tag points at. Do not publish a release for a tag whose commit has not passed
-CI on `main`.
+The workflow builds the commit the tag points at. It runs the unit tests and lint before anything is signed, and a
+red run uploads nothing. There is no separate CI workflow, so before publishing, run the checks locally on that
+commit (`./gradlew testDebugUnitTest testReleaseUnitTest lint lintRelease`).
 
 ## Local release builds
 
