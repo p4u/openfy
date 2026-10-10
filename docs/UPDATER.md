@@ -32,8 +32,9 @@ on:
 
 - `release: published` is the real path. `github.event.release.tag_name` is the tag.
 - `workflow_dispatch` is a **dry run**: same steps, version taken from the input, APK + checksum uploaded as a
-  *workflow artifact* (`actions/upload-artifact`) only. Never calls `gh release upload`. Signing still runs if the
-  secrets are present (so the dry run proves the keystore decodes and the fingerprint matches).
+  *workflow artifact* (`actions/upload-artifact`) only. Never calls `gh release upload`. Signing runs in the dry
+  run too and the secrets are required (the decode step fails if `OPENFY_KEYSTORE_B64` is empty), so a green dry
+  run proves the keystore decodes and the fingerprint matches.
 - Trigger from tags is deliberately *not* used: publishing the Release is the single human gate.
 
 ### 1.2 Versioning (the contract shared with the updater)
@@ -91,7 +92,9 @@ actions **pinned to commit SHAs** (resolved 2026-10-10; re-resolve when bumping)
 Permissions: top-level `permissions: {}`; the single job sets `permissions: { contents: write }` (needed by
 `gh release upload`). `concurrency: { group: release-${{ github.ref }}, cancel-in-progress: false }`.
 Job `environment: release` so the signing secrets live in a GitHub *environment* that can require a reviewer
-(see §3.1 for why that matters). Timeout 30 min.
+(see §3.1 for why that matters). Timeout 30 min. If the environment ever gets a deployment branch policy, it must
+be "selected branches and tags" with the pattern `v*`: `release: published` runs on `refs/tags/vX.Y.Z`, and a
+branch-only policy would reject every real release while dry runs from `main` keep passing.
 
 ### 1.4 Signing
 
@@ -126,7 +129,9 @@ and export `OPENFY_KEYSTORE_PASSWORD`, `OPENFY_KEY_ALIAS`, `OPENFY_KEY_PASSWORD`
 
 Gradle (`app/build.gradle.kts`), resolution order, first hit wins:
 
-1. Env vars `OPENFY_KEYSTORE_FILE`, `OPENFY_KEYSTORE_PASSWORD`, `OPENFY_KEY_ALIAS`, `OPENFY_KEY_PASSWORD`.
+1. Env vars `OPENFY_KEYSTORE_FILE`, `OPENFY_KEYSTORE_PASSWORD`, `OPENFY_KEY_ALIAS`, `OPENFY_KEY_PASSWORD`. If any
+   one of them is set, all four must be, otherwise configuration fails (for every task, not only release builds);
+   a half-configured env never falls through to the next source.
 2. A properties file at `$OPENFY_KEYSTORE_PROPERTIES`, default `~/.config/openfy/keystore.properties`
    (keys `storeFile`, `storePassword`, `keyAlias`, `keyPassword`; `storeFile` absolute). Never inside the repo;
    add `keystore.properties` and `*.jks` to `.gitignore` anyway.
@@ -147,26 +152,32 @@ signingConfigs {
 }
 ```
 
-Debug builds keep the default debug keystore and get `applicationIdSuffix = ".debug"` and
-`resValue("string", "app_name", "openfy (debug)")` (see §4.3 for why).
+Debug builds keep the default debug keystore and get `applicationIdSuffix = ".debug"` and the label `openfy debug`
+(an `app_name` override in `app/src/debug/res/values/strings.xml`; see §3.9 for why). No `versionNameSuffix`:
+the debug `versionName` must stay parseable by the §1.2 grammar (`0.0.0-dev`, or whatever `-PversionName` was).
 
 ### 1.5 Job steps in order
 
 1. Checkout, JDK, Gradle (above).
-2. **Resolve version**: from `github.event.release.tag_name` or the dispatch input; validate with the regex; check
-   the pre-release flag consistency (§1.2); `echo "VERSION=…" >> $GITHUB_ENV`.
-3. **Tests first**: `./gradlew --no-daemon testReleaseUnitTest lintRelease -PversionName=$VERSION`
-   (JS conformance test too: `node --test tools/test/*.test.mjs`, Node 22 is on the runner). Any failure stops the
-   job before signing material is decoded.
+2. **Resolve version**: from `github.event.release.tag_name` or the dispatch input (a leading `v` on the input is
+   optional and stripped); validate with the regex via `tools/version-code.sh`; check the pre-release flag
+   consistency (§1.2); `echo "VERSION=…" >> $GITHUB_ENV`. Event payload values reach bash only through step `env:`.
+3. **Tests first**: `tools/version-code.sh --selftest`, `node --test tools/test/*.test.mjs` (the runner's Node 22),
+   then `./gradlew --no-daemon :app:checkVersionVectors testReleaseUnitTest lintRelease -PversionName=$VERSION`.
+   `checkVersionVectors` is a `doLast` self-test of `versionFromName` and is marked not configuration-cache
+   compatible; the project does not enable the configuration cache, and if it ever does the vectors move to a unit
+   test. Any failure stops the job before signing material is decoded.
 4. Decode keystore (§1.4).
 5. **Build**: `./gradlew --no-daemon assembleRelease -PversionName=$VERSION -PrequireSigning=true`.
 6. **Rename**: `cp app/build/outputs/apk/release/app-release.apk "dist/openfy-$VERSION.apk"`.
 7. **Verify signature**:
    `"$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/openfy-$VERSION.apk`
    and assert it reports `Verified using v2 scheme: true`, `v3 scheme: true`, and that the printed
-   `Signer #1 certificate SHA-256 digest` equals `vars.OPENFY_RELEASE_CERT_SHA256` (normalise case/colons). Also
-   run `keytool -printcert -jarfile dist/openfy-$VERSION.apk` and print it to the log (human-readable fingerprint
-   in the run log for the thesis appendix). Mismatch → fail (wrong keystore uploaded as secret).
+   `Signer #1 certificate SHA-256 digest` equals `vars.OPENFY_RELEASE_CERT_SHA256` (normalise case/colons), and
+   `Number of signers: 1`. The fingerprint is echoed to the run log in upper-case colon form (human-readable, for
+   the thesis appendix). `keytool -printcert -jarfile` is not used: it only reads v1 (JAR) signatures and prints
+   "Not a signed jar file" on these v2/v3-only APKs. If `build-tools/35.0.0` is missing, fall back to the newest
+   installed build-tools directory. Mismatch → fail (wrong keystore uploaded as secret).
 8. **Verify version**: `aapt2 dump badging` (same build-tools dir) must show `package: name='dev.openfy'`,
    `versionName='$VERSION'` and the `versionCode` the formula predicts (bash re-implements the formula; use the
    §1.2 vectors in a tiny `tools/version-code.sh` with a self-test).
